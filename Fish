@@ -1,0 +1,66 @@
+from ai_module import FishTracker
+from motor_control import MotorController
+from sensor_module import SensorManager
+from communication import CommModule
+from power_management import PowerMonitor
+from diagnostics import DiagnosticsLogger
+
+def main(): 
+    # Initialize modules
+    ai_tracker = FishTracker()
+    motor_controller = MotorController()
+    sensor_manager = SensorManager()
+    comm_module = CommModule()
+    power_monitor = PowerMonitor()
+    diagnostics = DiagnosticsLogger()
+
+    # Main control loop
+    try:
+        while True:
+            # AI tracking
+            fish_direction = ai_tracker.track_fish()
+
+            # Sensor data
+            sensor_data = sensor_manager.get_sensor_data()
+
+            # Motor control
+            motor_controller.adjust_movement(fish_direction, sensor_data)
+
+            # Communication
+            comm_module.send_data({
+                "fish_direction": fish_direction,
+                "sensor_data": sensor_data
+            })
+
+            # Diagnostics
+            diagnostics.log_data(fish_direction, sensor_data)
+
+            # Power management
+            power_status = power_monitor.check_status()
+            if power_status["low"]:
+                comm_module.send_alert("Low power detected!")
+
+    except KeyboardInterrupt:
+        print("Shutting down.")
+        diagnostics.close_logs() #this is for recogniscion
+
+
+import cv2
+import torch
+from torchvision import transforms
+
+class FishTracker:
+    def __init__(self, model_path='fish_detector.pt', confidence_threshold=0.5):
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.model = torch.jit.load(model_path).to(self.device)
+        self.model.eval()
+        self.confidence_threshold = confidence_threshold
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((640, 640))
+        ])
+
+    def preprocess(self, frame):
+        # Convert frame to tensor and normalize
+        tensor = self.transform(frame).unsqueeze(0).to(self.device
+kd
