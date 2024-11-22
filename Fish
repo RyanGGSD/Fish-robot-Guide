@@ -1,3 +1,5 @@
+hailo_model_compiler --model yolov5.onnx --output yolov5.hailomodel
+
 from ai_module import FishTracker
 from motor_control import MotorController
 from sensor_module import SensorManager
@@ -42,7 +44,8 @@ def main():
 
     except KeyboardInterrupt:
         print("Shutting down.")
-        diagnostics.close_logs() #this is for recogniscion
+        diagnostics.close_logs() #this is for recogniscion #dit is voor herkenbaarheid
+
 
 
 import cv2
@@ -63,4 +66,130 @@ class FishTracker:
     def preprocess(self, frame):
         # Convert frame to tensor and normalize
         tensor = self.transform(frame).unsqueeze(0).to(self.device
-kd
+
+
+import torch
+model = torch.load('yolov5.pt')  # Load your trained YOLOv5 model
+model.eval()
+dummy_input = torch.randn(1, 3, 640, 640)  # Example input size
+torch.onnx.export(model, dummy_input, "yolov5.onnx", opset_version=11)
+
+
+import cv2
+from hailo_platform import hailo_infer  # Hypothetical Hailo SDK import
+
+class FishTracker:
+    def __init__(self, hailo_model_path, confidence_threshold=0.5):
+        # Load Hailo-optimized model
+        self.hailo_model = hailo_infer.load_model(hailo_model_path)
+        self.confidence_threshold = confidence_threshold
+
+    def preprocess(self, frame):
+        # Resize and normalize input frame for Hailo
+        resized_frame = cv2.resize(frame, (640, 640))
+        normalized_frame = resized_frame / 255.0
+        return normalized_frame.astype('float32')
+
+    def postprocess(self, outputs, frame):
+        # Extract bounding boxes and filter by confidence
+        boxes, confidences, classes = outputs
+        detections = []
+        for box, confidence, cls in zip(boxes, confidences, classes):
+            if confidence > self.confidence_threshold:
+                detections.append((box, cls, confidence))
+        return detections
+
+    def track_fish(self, frame):
+        # Preprocess frame
+        preprocessed_frame = self.preprocess(frame)
+
+        # Run inference on Hailo
+        outputs = self.hailo_model.infer(preprocessed_frame)
+
+        # Postprocess results
+        detections = self.postprocess(outputs, frame)
+        return detections
+
+
+
+#dit is alleen voor test
+import cv2
+import numpy as np
+from hailo_platform import hailo_rt  # Hailo runtime library
+
+class FishTracker:
+    def __init__(self, hailo_model_path, confidence_threshold=0.5):
+        # Initialize Hailo runtime and load the compiled model
+        self.runtime = hailo_rt.Runtime()
+        self.network_group = self.runtime.load_network_group(hailo_model_path)
+        self.confidence_threshold = confidence_threshold
+
+    def preprocess(self, frame):
+        # Resize the frame to match the model's input shape
+        input_shape = self.network_group.get_input_tensor_shape(0)
+        resized_frame = cv2.resize(frame, (input_shape[1], input_shape[2]))
+        normalized_frame = resized_frame / 255.0  # Normalize to 0-1
+        return np.expand_dims(normalized_frame.astype('float32'), axis=0)
+
+    def postprocess(self, outputs):
+        # Interpret the output tensor from the Hailo model
+        detections = []
+        for detection in outputs:
+            confidence = detection[4]  # Assuming confidence is at index 4
+            if confidence > self.confidence_threshold:
+                box = detection[:4]  # Assuming bounding box is [x_min, y_min, x_max, y_max]
+                cls = np.argmax(detection[5:])  # Class index starts at 5
+                detections.append((box, cls, confidence))
+        return detections
+
+    def track_fish(self, frame):
+        # Preprocess the frame
+        input_tensor = self.preprocess(frame)
+
+        # Run inference
+        output_tensors = self.network_group.infer(input_tensor)
+
+        # Postprocess results
+        detections = self.postprocess(output_tensors[0])  # Assuming single output tensor
+        return detections
+
+
+
+
+cap = cv2.VideoCapture(0)  # Replace 0 with the video source index
+tracker = FishTracker("yolov5.hailomodel")
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    detections = tracker.track_fish(frame)
+
+    # Draw detections on the frame
+    for box, cls, confidence in detections:
+        x_min, y_min, x_max, y_max = box
+        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+        cv2.putText(frame, f"Class: {cls}, Conf: {confidence:.2f}", 
+                    (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    cv2.imshow("Fish Tracker", frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
+
+from hailo_platform import hailo_rt
+
+# Initialize Hailo runtime
+runtime = hailo_rt.Runtime()
+network_group = runtime.load_network_group('yolov5.hailomodel')
+
+# Run inference
+input_tensor = preprocess_image(image)
+output_tensors = network_group.infer(input_tensor)
+
+# Postprocess results to extract bounding boxes and classes
+detections = postprocess_output(output_tensors)
